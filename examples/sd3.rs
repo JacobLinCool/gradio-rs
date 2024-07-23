@@ -1,5 +1,5 @@
 // cargo run --example sd3 -- 'A cute Crab in gradient colors.'
-use gradio::{Client, ClientOptions, PredictionInput};
+use gradio::{Client, ClientOptions, PredictionInput, PredictionOutput};
 
 #[tokio::main]
 async fn main() {
@@ -17,8 +17,8 @@ async fn main() {
     .await
     .unwrap();
 
-    let output = client
-        .predict(
+    let mut prediction = client
+        .submit(
             "/infer",
             vec![
                 PredictionInput::from_value(prompt),
@@ -33,12 +33,44 @@ async fn main() {
         )
         .await
         .unwrap();
-    println!(
-        "Generated Image: {}",
-        output[0].clone().as_file().unwrap().url.unwrap()
-    );
-    println!(
-        "Seed: {}",
-        output[1].clone().as_value().unwrap().as_i64().unwrap()
-    );
+
+    while let Some(event) = prediction.next().await {
+        let event = event.unwrap();
+        match event {
+            gradio::structs::QueueDataMessage::InQueue {
+                rank, queue_size, ..
+            } => {
+                println!("In Queue: {}/{}", rank + 1, queue_size);
+            }
+            gradio::structs::QueueDataMessage::Processing { progress_data, .. } => {
+                if progress_data.is_none() {
+                    continue;
+                }
+                let progress_data = progress_data.unwrap();
+                if !progress_data.is_empty() {
+                    let progress_data = &progress_data[0];
+                    println!(
+                        "Processing: {}/{} {}",
+                        progress_data.index + 1,
+                        progress_data.length.unwrap(),
+                        progress_data.unit
+                    );
+                }
+            }
+            gradio::structs::QueueDataMessage::Completed { output, .. } => {
+                let output: Vec<PredictionOutput> = output.try_into().unwrap();
+
+                println!(
+                    "Generated Image: {}",
+                    output[0].clone().as_file().unwrap().url.unwrap()
+                );
+                println!(
+                    "Seed: {}",
+                    output[1].clone().as_value().unwrap().as_i64().unwrap()
+                );
+                break;
+            }
+            _ => {}
+        }
+    }
 }

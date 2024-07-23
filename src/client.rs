@@ -1,14 +1,13 @@
 use anyhow::{Error, Result};
-use futures_util::stream::StreamExt;
 use rand::{distributions::Alphanumeric, Rng};
 use regex::Regex;
-use reqwest_eventsource::{Event, EventSource};
 
 use crate::constants::*;
 use crate::structs::*;
 use crate::{
     data::{PredictionInput, PredictionOutput},
     space::wake_up_space,
+    stream::PredictionStream,
 };
 
 #[derive(Default)]
@@ -81,71 +80,21 @@ impl Client {
             .map(char::from)
             .collect();
 
-        // Build the HTTP client
-        let mut http_client_builder = reqwest::Client::builder()
-            .cookie_store(true)
-            .user_agent("Rust Gradio Client");
-        if let Some(hf_token) = &options.hf_token {
-            http_client_builder =
-                http_client_builder.default_headers(reqwest::header::HeaderMap::from_iter(vec![(
-                    reqwest::header::AUTHORIZATION,
-                    format!("Bearer {}", hf_token).parse()?,
-                )]));
-        }
-        let http_client = http_client_builder.build()?;
+        let http_client = Client::build_http_client(&options.hf_token)?;
 
-        // Resolve the API root
-        let app_reference = app_reference.trim_end_matches('/').to_string();
-        let mut api_root = app_reference.clone();
-        let mut space_id = None;
-        if Regex::new("^[a-zA-Z0-9_\\-\\.]+\\/[a-zA-Z0-9_\\-\\.]+$")?.is_match(&app_reference) {
-            let url = format!(
-                "https://huggingface.co/api/spaces/{}/{}",
-                app_reference, HOST_URL
-            );
-            let res = http_client.get(&url).send().await?;
-            let res = res.json::<HuggingFaceAPIHost>().await?;
-            api_root.clone_from(&res.host);
-            space_id = Some(app_reference);
-        } else if Regex::new(".*hf\\.space\\/{0,1}$")?.is_match(&app_reference) {
-            space_id = Some(app_reference.replace(".hf.space", ""));
-        }
+        let (api_root, space_id) =
+            Client::resolve_app_reference(&http_client, app_reference).await?;
 
-        // Authenticate with username and password
         if let Some((username, password)) = &options.auth {
-            let res = http_client
-                .post(&format!("{}/{}", api_root, LOGIN_URL))
-                .form(&[("username", username), ("password", password)])
-                .send()
-                .await?;
-            if !res.status().is_success() {
-                return Err(Error::msg("Login failed"));
-            }
+            Client::authenticate(&http_client, &api_root, username, password).await?;
         }
 
         if let Some(space_id) = &space_id {
             wake_up_space(&http_client, space_id).await?;
         }
 
-        // Fetch the config
-        let res = http_client
-            .get(&format!("{}/{}", api_root, CONFIG_URL))
-            .send()
-            .await?;
-        if !res.status().is_success() {
-            return Err(Error::msg("Could not resolve app config"));
-        }
-        let config = res.json::<AppConfig>().await?;
-
-        // Fetch the API info
-        let res = http_client
-            .get(&format!("{}/{}", api_root, API_INFO_URL))
-            .send()
-            .await?;
-        if !res.status().is_success() {
-            return Err(Error::msg("Could not get API info"));
-        }
-        let api_info = res.json::<ApiInfo>().await?;
+        let config = Client::fetch_config(&http_client, &api_root).await?;
+        let api_info = Client::fetch_api_info(&http_client, &api_root).await?;
 
         Ok(Self {
             session_hash,
@@ -166,13 +115,126 @@ impl Client {
         self.api_info
     }
 
+    pub async fn submit(self, route: &str, data: Vec<PredictionInput>) -> Result<PredictionStream> {
+        let data = Client::prepare_data(&self.http_client, &self.api_root, data).await?;
+        let fn_index = Client::resolve_fn_index(&self.config, route)?;
+        PredictionStream::new(&self.http_client, &self.api_root, fn_index, data).await
+    }
+
     pub async fn predict(
         self,
         route: &str,
         data: Vec<PredictionInput>,
     ) -> Result<Vec<PredictionOutput>> {
+        let mut stream = self.submit(route, data).await?;
+        while let Some(message) = stream.next().await {
+            match message {
+                Ok(message) => match message {
+                    QueueDataMessage::Open
+                    | QueueDataMessage::InQueue { .. }
+                    | QueueDataMessage::Processing { .. } => {}
+                    QueueDataMessage::Completed { output, .. } => {
+                        return output.try_into();
+                    }
+                    QueueDataMessage::Unknown(m) => {
+                        if m.get("msg").map(|m| m == "heartbeat").unwrap_or(false) {
+                            continue;
+                        }
+                        eprintln!("[warning] Skipping unknown message: {:?}", m);
+                    }
+                },
+                Err(err) => {
+                    return Err(err);
+                }
+            }
+        }
+
+        Err(Error::msg("Stream ended unexpectedly"))
+    }
+
+    fn build_http_client(hf_token: &Option<String>) -> Result<reqwest::Client> {
+        let mut http_client_builder = reqwest::Client::builder()
+            .cookie_store(true)
+            .user_agent("Rust Gradio Client");
+        if let Some(hf_token) = hf_token {
+            http_client_builder =
+                http_client_builder.default_headers(reqwest::header::HeaderMap::from_iter(vec![(
+                    reqwest::header::AUTHORIZATION,
+                    format!("Bearer {}", hf_token).parse()?,
+                )]));
+        }
+
+        http_client_builder.build().map_err(Error::new)
+    }
+
+    async fn resolve_app_reference(
+        http_client: &reqwest::Client,
+        app_reference: &str,
+    ) -> Result<(String, Option<String>)> {
+        let app_reference = app_reference.trim_end_matches('/').to_string();
+        let mut api_root = app_reference.clone();
+        let mut space_id = None;
+        if Regex::new("^[a-zA-Z0-9_\\-\\.]+\\/[a-zA-Z0-9_\\-\\.]+$")?.is_match(&app_reference) {
+            let url = format!(
+                "https://huggingface.co/api/spaces/{}/{}",
+                app_reference, HOST_URL
+            );
+            let res = http_client.get(&url).send().await?;
+            let res = res.json::<HuggingFaceAPIHost>().await?;
+            api_root.clone_from(&res.host);
+            space_id = Some(app_reference);
+        } else if Regex::new(".*hf\\.space\\/{0,1}$")?.is_match(&app_reference) {
+            space_id = Some(app_reference.replace(".hf.space", ""));
+        }
+
+        Ok((api_root, space_id))
+    }
+
+    async fn authenticate(
+        http_client: &reqwest::Client,
+        api_root: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<()> {
+        let res = http_client
+            .post(&format!("{}/{}", api_root, LOGIN_URL))
+            .form(&[("username", username), ("password", password)])
+            .send()
+            .await?;
+        if !res.status().is_success() {
+            return Err(Error::msg("Login failed"));
+        }
+        Ok(())
+    }
+
+    async fn fetch_config(http_client: &reqwest::Client, api_root: &str) -> Result<AppConfig> {
+        let res = http_client
+            .get(&format!("{}/{}", api_root, CONFIG_URL))
+            .send()
+            .await?;
+        if !res.status().is_success() {
+            return Err(Error::msg("Could not resolve app config"));
+        }
+        res.json::<AppConfig>().await.map_err(Error::new)
+    }
+
+    async fn fetch_api_info(http_client: &reqwest::Client, api_root: &str) -> Result<ApiInfo> {
+        let res = http_client
+            .get(&format!("{}/{}", api_root, API_INFO_URL))
+            .send()
+            .await?;
+        if !res.status().is_success() {
+            return Err(Error::msg("Could not get API info"));
+        }
+        res.json::<ApiInfo>().await.map_err(Error::new)
+    }
+
+    async fn prepare_data(
+        http_client: &reqwest::Client,
+        api_root: &str,
+        data: Vec<PredictionInput>,
+    ) -> Result<Vec<serde_json::Value>> {
         let mut inputs = vec![];
-        // upload files and replace with file handles
         for d in data {
             match d {
                 PredictionInput::File(path) => {
@@ -189,9 +251,8 @@ impl Client {
                                 .as_ref(),
                         )?;
                     let form = reqwest::multipart::Form::new().part("files", part);
-                    let res = self
-                        .http_client
-                        .post(&format!("{}/{}", self.api_root, UPLOAD_URL))
+                    let res = http_client
+                        .post(&format!("{}/{}", api_root, UPLOAD_URL))
                         .multipart(form)
                         .send()
                         .await?;
@@ -213,73 +274,17 @@ impl Client {
                 PredictionInput::Value(value) => inputs.push(value),
             }
         }
+        Ok(inputs)
+    }
 
+    fn resolve_fn_index(config: &AppConfig, route: &str) -> Result<i64> {
         let route = route.trim_start_matches('/');
-        let fn_index = self
-            .config
+        let fn_index = config
             .dependencies
             .iter()
             .find(|d| d.api_name == route)
             .ok_or_else(|| Error::msg("Invalid route"))?
             .id;
-
-        // join the queue
-        let url = format!("{}/queue/join", self.api_root);
-        let payload = serde_json::json!({
-            "fn_index": fn_index,
-            "data": inputs,
-            "session_hash": self.session_hash
-        });
-        // println!("{:#?}", payload);
-        let res = self.http_client.post(&url).json(&payload).send().await?;
-        if !res.status().is_success() {
-            return Err(Error::msg("Cannot join task queue"));
-        }
-        let res = res.json::<QueueJoinResponse>().await?;
-        let evt = res.event_id;
-
-        let url = format!(
-            "{}/queue/data?session_hash={}",
-            self.api_root, self.session_hash
-        );
-        let mut es = EventSource::new(self.http_client.get(&url))?;
-        while let Some(event) = es.next().await {
-            match event {
-                Ok(Event::Open) => {}
-                Ok(Event::Message(message)) => {
-                    // println!("{:#?}", message);
-                    let message: QueueDataMessage = serde_json::from_str(&message.data)?;
-                    match message {
-                        QueueDataMessage::InQueue { .. } => {}
-                        QueueDataMessage::Processing { .. } => {}
-                        QueueDataMessage::Completed {
-                            output, event_id, ..
-                        } => {
-                            if event_id == evt {
-                                if let QueueDataMessageOutput::Success { data, .. } = output {
-                                    return data
-                                        .into_iter()
-                                        .map(|d| {
-                                            serde_json::from_value::<PredictionOutput>(d)
-                                                .map_err(Error::msg)
-                                        })
-                                        .collect::<Result<Vec<PredictionOutput>>>();
-                                } else if let QueueDataMessageOutput::Error { error } = output {
-                                    return Err(Error::msg(
-                                        error.unwrap_or("Unknown error".to_string()),
-                                    ));
-                                }
-                            }
-                        }
-                        QueueDataMessage::Unknown(_) => {}
-                    }
-                }
-                Err(err) => {
-                    return Err(Error::msg(format!("Error: {:#?}", err)));
-                }
-            }
-        }
-
-        Err(Error::msg("Stream ended unexpectedly"))
+        Ok(fn_index)
     }
 }

@@ -2,6 +2,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::structs::QueueDataMessageOutput;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum PredictionInput {
     Value(serde_json::Value),
@@ -61,4 +63,23 @@ pub struct GradioFileData {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GradioFileDataMeta {
     pub _type: String,
+}
+
+impl TryFrom<QueueDataMessageOutput> for Vec<PredictionOutput> {
+    type Error = anyhow::Error;
+
+    fn try_from(value: QueueDataMessageOutput) -> Result<Self> {
+        match value {
+            QueueDataMessageOutput::Success { data, .. } => {
+                let mut outputs = Vec::new();
+                for value in data {
+                    outputs.push(serde_json::from_value::<PredictionOutput>(value)?);
+                }
+                Ok(outputs)
+            }
+            QueueDataMessageOutput::Error { error } => {
+                Err(anyhow::anyhow!(error.unwrap_or("Unknown error".to_string())))
+            }
+        }
+    }
 }

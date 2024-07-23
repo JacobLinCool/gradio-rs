@@ -2,13 +2,15 @@
 
 Gradio Client in Rust.
 
+![demo gif](./images/demo.gif)
+
 ## Features
 
 - [x] View API
 - [x] Upload file
 - [x] Make prediction
   - [x] The blocking `predict` method
-  - [ ] The non-blocking `submit` method
+  - [x] The non-blocking `submit` method
 
 ## Documentation
 
@@ -58,3 +60,5 @@ async fn main() {
     );
 }
 ```
+
+See [./examples/sd3.rs](./examples/sd3.rs) for non-blocking example with `submit` method.

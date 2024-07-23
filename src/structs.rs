@@ -127,18 +127,20 @@ pub enum QueueDataMessage {
         queue_size: i64,
         rank_eta: f64,
     },
-    Processing {
-        event_id: String,
-        msg: String,
-        eta: f64,
-    },
     Completed {
         event_id: String,
         msg: String,
         output: QueueDataMessageOutput,
         success: bool,
     },
+    Processing {
+        event_id: String,
+        msg: String,
+        eta: Option<f64>,
+        progress_data: Option<Vec<ProcessingProgressData>>,
+    },
     Unknown(serde_json::Value),
+    Open,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -151,4 +153,11 @@ pub enum QueueDataMessageOutput {
     Error {
         error: Option<String>,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ProcessingProgressData {
+    pub index: usize,
+    pub length: Option<usize>,
+    pub unit: String,
 }
