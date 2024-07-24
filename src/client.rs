@@ -107,12 +107,12 @@ impl Client {
         })
     }
 
-    pub fn view_config(self) -> AppConfig {
-        self.config
+    pub fn view_config(&self) -> AppConfig {
+        self.config.clone()
     }
 
-    pub fn view_api(self) -> ApiInfo {
-        self.api_info
+    pub fn view_api(&self) -> ApiInfo {
+        self.api_info.clone()
     }
 
     pub async fn submit(self, route: &str, data: Vec<PredictionInput>) -> Result<PredictionStream> {

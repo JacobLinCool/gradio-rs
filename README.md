@@ -11,6 +11,7 @@ Gradio Client in Rust.
 - [x] Make prediction
   - [x] The blocking `predict` method
   - [x] The non-blocking `submit` method
+- [x] Command-line interface
 
 ## Documentation
 
@@ -62,3 +63,41 @@ async fn main() {
 ```
 
 See [./examples/sd3.rs](./examples/sd3.rs) for non-blocking example with `submit` method.
+
+## Command-line Interface
+
+```sh
+cargo install gradio
+gr --help
+```
+
+Take `stabilityai/stable-diffusion-3-medium` HF Space as an example:
+
+```sh
+> gr list stabilityai/stable-diffusion-3-medium
+API Spec for stabilityai/stable-diffusion-3-medium:
+        /infer
+                Parameters:
+                        prompt               ( str      ) 
+                        negative_prompt      ( str      ) 
+                        seed                 ( float    ) numeric value between 0 and 2147483647
+                        randomize_seed       ( bool     ) 
+                        width                ( float    ) numeric value between 256 and 1344
+                        height               ( float    ) numeric value between 256 and 1344
+                        guidance_scale       ( float    ) numeric value between 0.0 and 10.0
+                        num_inference_steps  ( float    ) numeric value between 1 and 50
+                Returns:
+                        Result               ( filepath ) 
+                        Seed                 ( float    ) numeric value between 0 and 2147483647
+
+> gr run stabilityai/stable-diffusion-3-medium infer 'Rusty text "AI & CLI" on the snow.' '' 0 true 1024 1024 5 28
+Result: https://stabilityai-stable-diffusion-3-medium.hf.space/file=/tmp/gradio/5735ca7775e05f8d56d929d8f57b099a675c0a01/image.webp
+Seed: 486085626
+```
+
+For file input, simply use the file path as the argument:
+
+```sh
+gr run hf-audio/whisper-large-v3 predict 'test-audio.wav' 'transcribe'
+output: " Did you know you can try the coolest model on your command line?"
+```

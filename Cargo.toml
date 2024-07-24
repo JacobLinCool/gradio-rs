@@ -1,13 +1,13 @@
 [package]
 name = "gradio"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 authors = ["Jacob Lin <jacob@csie.cool>"]
 description = "Gradio Client in Rust."
 repository = "https://github.com/JacobLinCool/gradio-rs/"
 license = "MIT"
 keywords = ["gradio", "client", "huggingface"]
-categories = ["network-programming"]
+categories = ["network-programming", "command-line-utilities"]
 readme = "README.md"
 documentation = "https://docs.rs/gradio"
 homepage = "https://github.com/JacobLinCool/gradio-rs/"
@@ -15,8 +15,13 @@ homepage = "https://github.com/JacobLinCool/gradio-rs/"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "gr"
+path = "src/bin/gr.rs"
+
 [dependencies]
 anyhow = "1.0.86"
+clap = { version = "4.5.10", features = ["cargo", "derive", "string"] }
 futures-util = "0.3.30"
 mime_guess = "2.0.5"
 rand = "0.8.5"
