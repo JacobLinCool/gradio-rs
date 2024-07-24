@@ -32,6 +32,7 @@ async fn main() -> Result<()> {
 
 fn cli() -> Command {
     Command::new("gr")
+        .version(env!("CARGO_PKG_VERSION"))
         .about("Gradio Command Line Client")
         .arg(arg!(--token <token> "The Hugging Face Access Token"))
         .subcommand_required(true)
