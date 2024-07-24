@@ -279,12 +279,17 @@ impl Client {
 
     fn resolve_fn_index(config: &AppConfig, route: &str) -> Result<i64> {
         let route = route.trim_start_matches('/');
-        let fn_index = config
+        let found = config
             .dependencies
             .iter()
-            .find(|d| d.api_name == route)
-            .ok_or_else(|| Error::msg("Invalid route"))?
-            .id;
-        Ok(fn_index)
+            .enumerate()
+            .find(|(_i, d)| d.api_name == route)
+            .ok_or_else(|| Error::msg("Invalid route"))?;
+
+        if found.1.id == -1 {
+            Ok(found.0 as i64)
+        } else {
+            Ok(found.1.id)
+        }
     }
 }

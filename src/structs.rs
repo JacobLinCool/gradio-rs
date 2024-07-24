@@ -62,9 +62,13 @@ pub struct ComponentMeta {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Dependency {
     pub api_name: String,
-    #[serde(default)]
+    #[serde(default = "default_id")]
     pub id: i64,
     pub queue: Option<bool>,
+}
+
+fn default_id() -> i64 {
+    -1
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -76,40 +80,40 @@ pub enum StringOrI64 {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiInfo {
-    named_endpoints: HashMap<String, EndpointInfo>,
+    pub named_endpoints: HashMap<String, EndpointInfo>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EndpointInfo {
-    parameters: Vec<ApiData>,
-    returns: Vec<ApiData>,
+    pub parameters: Vec<ApiData>,
+    pub returns: Vec<ApiData>,
     #[serde(default)]
-    show_api: Option<bool>,
+    pub show_api: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiData {
-    label: Option<String>,
-    parameter_name: Option<String>,
-    parameter_default: Option<serde_json::Value>,
-    parameter_has_default: Option<bool>,
-    component: String,
-    example_input: Option<serde_json::Value>,
-    r#type: ApiDataType,
-    python_type: ApiDataPythonType,
+    pub label: Option<String>,
+    pub parameter_name: Option<String>,
+    pub parameter_default: Option<serde_json::Value>,
+    pub parameter_has_default: Option<bool>,
+    pub component: String,
+    pub example_input: Option<serde_json::Value>,
+    pub r#type: ApiDataType,
+    pub python_type: ApiDataPythonType,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiDataType {
-    r#type: String,
+    pub r#type: String,
     #[serde(default)]
-    description: String,
+    pub description: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiDataPythonType {
-    r#type: String,
-    description: String,
+    pub r#type: String,
+    pub description: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

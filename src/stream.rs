@@ -59,7 +59,6 @@ impl PredictionStream {
 
     pub async fn next(&mut self) -> Option<Result<QueueDataMessage>> {
         let event = self.es.next().await;
-        event.as_ref()?;
         let event = event.unwrap();
 
         match event {
