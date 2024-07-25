@@ -3,6 +3,7 @@ use rand::{distributions::Alphanumeric, Rng};
 use regex::Regex;
 
 use crate::constants::*;
+use crate::preprocess_data;
 use crate::structs::*;
 use crate::{
     data::{PredictionInput, PredictionOutput},
@@ -116,7 +117,7 @@ impl Client {
     }
 
     pub async fn submit(self, route: &str, data: Vec<PredictionInput>) -> Result<PredictionStream> {
-        let data = Client::prepare_data(&self.http_client, &self.api_root, data).await?;
+        let data = preprocess_data(&self.http_client, &self.api_root, data).await?;
         let fn_index = Client::resolve_fn_index(&self.config, route)?;
         PredictionStream::new(&self.http_client, &self.api_root, fn_index, data).await
     }
@@ -227,54 +228,6 @@ impl Client {
             return Err(Error::msg("Could not get API info"));
         }
         res.json::<ApiInfo>().await.map_err(Error::new)
-    }
-
-    async fn prepare_data(
-        http_client: &reqwest::Client,
-        api_root: &str,
-        data: Vec<PredictionInput>,
-    ) -> Result<Vec<serde_json::Value>> {
-        let mut inputs = vec![];
-        for d in data {
-            match d {
-                PredictionInput::File(path) => {
-                    let part = reqwest::multipart::Part::bytes(tokio::fs::read(&path).await?)
-                        .file_name(
-                            path.file_name()
-                                .ok_or_else(|| Error::msg("Invalid file path"))?
-                                .to_string_lossy()
-                                .to_string(),
-                        )
-                        .mime_str(
-                            mime_guess::from_path(&path)
-                                .first_or_octet_stream()
-                                .as_ref(),
-                        )?;
-                    let form = reqwest::multipart::Form::new().part("files", part);
-                    let res = http_client
-                        .post(&format!("{}/{}", api_root, UPLOAD_URL))
-                        .multipart(form)
-                        .send()
-                        .await?;
-                    if !res.status().is_success() {
-                        return Err(Error::msg("Error uploading file"));
-                    }
-                    let res = res.json::<Vec<String>>().await?;
-                    if res.len() != 1 {
-                        return Err(Error::msg("Invalid file upload response"));
-                    }
-                    inputs.push(serde_json::json!({
-                        "path": res[0],
-                        "orig_name": path.to_string_lossy(),
-                        "meta": {
-                            "_type": "gradio.FileData"
-                        }
-                    }));
-                }
-                PredictionInput::Value(value) => inputs.push(value),
-            }
-        }
-        Ok(inputs)
     }
 
     fn resolve_fn_index(config: &AppConfig, route: &str) -> Result<i64> {
