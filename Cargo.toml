@@ -15,6 +15,10 @@ homepage = "https://github.com/JacobLinCool/gradio-rs/"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["tokio/rt-multi-thread"]
+wasm = ["getrandom/js", "tokio/time", "tokio/io-util"]
+
 [[bin]]
 name = "gr"
 path = "src/bin/gr.rs"
@@ -24,10 +28,11 @@ anyhow = "1.0.86"
 bytes = "1.6.1"
 clap = { version = "4.5.10", features = ["cargo", "derive", "string"] }
 futures-util = "0.3.30"
+getrandom = { version = "0.2.15", optional = true }
 mime_guess = "2.0.5"
 rand = "0.8.5"
 regex = "1.10.5"
-reqwest = { version = "0.12.5", features = [
+reqwest = { version = "0.12.7", features = [
     "rustls-tls",
     "json",
     "cookies",
@@ -36,4 +41,8 @@ reqwest = { version = "0.12.5", features = [
 reqwest-eventsource = "0.6.0"
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"
-tokio = { version = "1.38.1", features = ["macros", "rt", "rt-multi-thread"] }
+tokio = { version = "1.38.1", features = ["macros", "rt"] }
+
+[patch.crates-io]
+# tracking https://github.com/seanmonstar/reqwest/pull/2360
+reqwest = { git = "https://github.com/c-git/reqwest.git", branch = "wasm-cookies" }

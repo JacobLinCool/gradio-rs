@@ -1,10 +1,9 @@
 use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
-use std::{
-    future::Future,
-    path::{Path, PathBuf},
-    pin::Pin,
-};
+#[cfg(not(feature = "wasm"))]
+use std::path::{Path, PathBuf};
+use std::{future::Future, pin::Pin};
+#[cfg(not(feature = "wasm"))]
 use tokio::io::AsyncWriteExt;
 
 use crate::{constants::UPLOAD_URL, structs::QueueDataMessageOutput};
@@ -12,13 +11,20 @@ use crate::{constants::UPLOAD_URL, structs::QueueDataMessageOutput};
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum PredictionInput {
     Value(serde_json::Value),
-    File(PathBuf),
+    #[cfg(not(feature = "wasm"))]
+    FilePath(PathBuf),
+    FileData(String, Vec<u8>),
     Array(Vec<PredictionInput>),
 }
 
 impl PredictionInput {
+    #[cfg(not(feature = "wasm"))]
     pub fn from_file(path: impl Into<PathBuf>) -> Self {
-        Self::File(path.into())
+        Self::FilePath(path.into())
+    }
+
+    pub fn from_file_data(filename: impl Into<String>, data: Vec<u8>) -> Self {
+        Self::FileData(filename.into(), data)
     }
 
     pub fn from_value(value: impl serde::Serialize) -> Self {
@@ -26,20 +32,16 @@ impl PredictionInput {
     }
 }
 
-pub async fn upload_file(
+pub async fn upload_file_from_memory(
     http_client: &reqwest::Client,
     api_root: &str,
-    path: PathBuf,
+    filename: &str,
+    data: Vec<u8>,
 ) -> Result<serde_json::Value> {
-    let part = reqwest::multipart::Part::bytes(tokio::fs::read(&path).await?)
-        .file_name(
-            path.file_name()
-                .ok_or_else(|| Error::msg("Invalid file path"))?
-                .to_string_lossy()
-                .to_string(),
-        )
+    let part = reqwest::multipart::Part::bytes(data)
+        .file_name(filename.to_owned())
         .mime_str(
-            mime_guess::from_path(&path)
+            mime_guess::from_path(filename)
                 .first_or_octet_stream()
                 .as_ref(),
         )?;
@@ -59,13 +61,28 @@ pub async fn upload_file(
 
     let json = serde_json::json!({
         "path": res[0],
-        "orig_name": path.to_string_lossy(),
+        "orig_name": filename,
         "meta": {
             "_type": "gradio.FileData"
         }
     });
 
     Ok(json)
+}
+
+#[cfg(not(feature = "wasm"))]
+pub async fn upload_file(
+    http_client: &reqwest::Client,
+    api_root: &str,
+    path: PathBuf,
+) -> Result<serde_json::Value> {
+    let data = tokio::fs::read(&path).await?;
+    let filename = path
+        .file_name()
+        .ok_or_else(|| Error::msg("Invalid file path"))?
+        .to_string_lossy()
+        .to_string();
+    upload_file_from_memory(http_client, api_root, &filename, data).await
 }
 
 pub async fn preprocess_data(
@@ -86,8 +103,14 @@ fn preprocess_data_helper<'a>(
         for d in data {
             match d {
                 PredictionInput::Value(value) => inputs.push(value),
-                PredictionInput::File(path) => {
+                #[cfg(not(feature = "wasm"))]
+                PredictionInput::FilePath(path) => {
                     inputs.push(upload_file(http_client, api_root, path).await?);
+                }
+                PredictionInput::FileData(filename, data) => {
+                    inputs.push(
+                        upload_file_from_memory(http_client, api_root, &filename, data).await?,
+                    );
                 }
                 PredictionInput::Array(values) => {
                     let array = preprocess_data(http_client, api_root, values).await?;
@@ -179,6 +202,7 @@ impl GradioFileData {
         }
     }
 
+    #[cfg(not(feature = "wasm"))]
     pub async fn save_to_path(
         &self,
         path: impl AsRef<Path>,

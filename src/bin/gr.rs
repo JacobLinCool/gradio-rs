@@ -1,9 +1,14 @@
+#[cfg(not(feature = "wasm"))]
 use std::path::PathBuf;
-
+#[cfg(not(feature = "wasm"))]
 use anyhow::Result;
+#[cfg(not(feature = "wasm"))]
 use clap::{arg, Command};
+#[cfg(not(feature = "wasm"))]
 use gradio::{Client, ClientOptions, PredictionInput};
 
+
+#[cfg(not(feature = "wasm"))]
 #[tokio::main]
 async fn main() -> Result<()> {
     let matches = cli().get_matches();
@@ -33,6 +38,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(feature = "wasm"))]
 fn cli() -> Command {
     Command::new("gr")
         .version(env!("CARGO_PKG_VERSION"))
@@ -57,6 +63,7 @@ fn cli() -> Command {
         )
 }
 
+#[cfg(not(feature = "wasm"))]
 async fn run_command(
     space_id: &str,
     route: &str,
@@ -140,6 +147,7 @@ async fn run_command(
     Ok(())
 }
 
+#[cfg(not(feature = "wasm"))]
 async fn list_command(space_id: &str, token: Option<&String>) -> Result<()> {
     let opt = if let Some(token) = token {
         ClientOptions::with_hf_token(token.clone())
@@ -188,4 +196,10 @@ async fn list_command(space_id: &str, token: Option<&String>) -> Result<()> {
     }
 
     Ok(())
+}
+
+
+#[cfg(feature = "wasm")]
+fn main() {
+    panic!("This binary is not supported for wasm.")
 }
