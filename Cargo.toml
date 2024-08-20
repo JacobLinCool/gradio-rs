@@ -1,6 +1,6 @@
 [package]
 name = "gradio"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 authors = ["Jacob Lin <jacob@csie.cool>"]
 description = "Gradio Client in Rust."

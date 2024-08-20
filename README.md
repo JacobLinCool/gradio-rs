@@ -12,6 +12,7 @@ Gradio Client in Rust.
   - [x] The blocking `predict` method
   - [x] The non-blocking `submit` method
 - [x] Command-line interface
+- [x] Synchronous and asynchronous API
 
 ## Documentation
 
