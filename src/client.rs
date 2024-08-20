@@ -116,14 +116,18 @@ impl Client {
         self.api_info.clone()
     }
 
-    pub async fn submit(self, route: &str, data: Vec<PredictionInput>) -> Result<PredictionStream> {
+    pub async fn submit(
+        &self,
+        route: &str,
+        data: Vec<PredictionInput>,
+    ) -> Result<PredictionStream> {
         let data = preprocess_data(&self.http_client, &self.api_root, data).await?;
         let fn_index = Client::resolve_fn_index(&self.config, route)?;
         PredictionStream::new(&self.http_client, &self.api_root, fn_index, data).await
     }
 
     pub async fn predict(
-        self,
+        &self,
         route: &str,
         data: Vec<PredictionInput>,
     ) -> Result<Vec<PredictionOutput>> {

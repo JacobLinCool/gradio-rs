@@ -205,7 +205,6 @@ impl GradioFileData {
             "file.bin"
         };
         let ext = ext.split('.').last();
-        let ext = ext.unwrap_or("bin");
-        ext
+        ext.unwrap_or("bin")
     }
 }
