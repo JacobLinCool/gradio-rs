@@ -220,7 +220,18 @@ impl Client {
         if !res.status().is_success() {
             return Err(Error::msg("Could not resolve app config"));
         }
-        res.json::<AppConfig>().await.map_err(Error::new)
+
+        let json = res.json::<serde_json::Value>().await?;
+        let config: AppConfigVersionOnly = serde_json::from_value(json.clone())?;
+
+        if !config.version.starts_with("4.") {
+            eprintln!(
+                "Warning: This client is supposed to work with Gradio 4. The current version of the app is {}, which may cause issues.",
+                config.version
+            );
+        }
+
+        serde_json::from_value(json).map_err(Error::new)
     }
 
     async fn fetch_api_info(http_client: &reqwest::Client, api_root: &str) -> Result<ApiInfo> {

@@ -7,6 +7,11 @@ pub struct HuggingFaceAPIHost {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AppConfigVersionOnly {
+    pub version: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AppConfig {
     pub components: Vec<ComponentMeta>,
     pub dependencies: Vec<Dependency>,
@@ -53,6 +58,7 @@ pub struct ComponentMeta {
     pub r#type: String,
     pub id: StringOrI64,
     pub props: serde_json::Value,
+    #[serde(default)]
     pub component_class_id: String,
     pub component: Option<serde_json::Value>,
     pub value: Option<serde_json::Value>,
