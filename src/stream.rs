@@ -59,6 +59,9 @@ impl PredictionStream {
 
     pub async fn next(&mut self) -> Option<Result<QueueDataMessage>> {
         let event = self.es.next().await;
+        if event.is_none() {
+            return Some(Err(Error::msg("Stream ended")));
+        }
         let event = event.unwrap();
 
         match event {
