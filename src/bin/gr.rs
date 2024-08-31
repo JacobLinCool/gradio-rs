@@ -115,12 +115,12 @@ async fn run_command(
     while let Some(event) = prediction.next().await {
         let event = event.unwrap();
         match event {
-            gradio::structs::QueueDataMessage::InQueue {
+            gradio::structs::QueueDataMessage::Estimation {
                 rank, queue_size, ..
             } => {
                 eprintln!("Queueing: {}/{}", rank + 1, queue_size);
             }
-            gradio::structs::QueueDataMessage::Processing { progress_data, .. } => {
+            gradio::structs::QueueDataMessage::Progress { progress_data, .. } => {
                 if progress_data.is_none() {
                     continue;
                 }
@@ -135,7 +135,7 @@ async fn run_command(
                     );
                 }
             }
-            gradio::structs::QueueDataMessage::Completed { output, .. } => {
+            gradio::structs::QueueDataMessage::ProcessCompleted { output, .. } => {
                 let output: Vec<PredictionOutput> = output.try_into().unwrap();
 
                 for (i, ret) in endpoint.returns.iter().enumerate() {

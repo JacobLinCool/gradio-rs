@@ -136,15 +136,20 @@ impl Client {
             match message {
                 Ok(message) => match message {
                     QueueDataMessage::Open
-                    | QueueDataMessage::InQueue { .. }
-                    | QueueDataMessage::Processing { .. } => {}
-                    QueueDataMessage::Completed { output, .. } => {
+                    | QueueDataMessage::Estimation { .. }
+                    | QueueDataMessage::ProcessStarts { .. }
+                    | QueueDataMessage::Progress { .. }
+                    | QueueDataMessage::Log { .. }
+                    | QueueDataMessage::Heartbeat => {}
+                    QueueDataMessage::ProcessCompleted { output, .. } => {
                         return output.try_into();
                     }
+                    QueueDataMessage::UnexpectedError { message } => {
+                        return Err(Error::msg(
+                            message.unwrap_or_else(|| "Unexpected error".to_string()),
+                        ));
+                    }
                     QueueDataMessage::Unknown(m) => {
-                        if m.get("msg").map(|m| m == "heartbeat").unwrap_or(false) {
-                            continue;
-                        }
                         eprintln!("[warning] Skipping unknown message: {:?}", m);
                     }
                 },

@@ -128,29 +128,46 @@ pub struct QueueJoinResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(untagged)]
+#[serde(tag = "msg")]
 pub enum QueueDataMessage {
-    InQueue {
-        event_id: String,
-        msg: String,
+    #[serde(rename = "estimation")]
+    Estimation {
+        event_id: Option<String>,
         rank: i64,
         queue_size: i64,
         rank_eta: f64,
     },
-    Completed {
-        event_id: String,
-        msg: String,
-        output: QueueDataMessageOutput,
-        success: bool,
-    },
-    Processing {
-        event_id: String,
-        msg: String,
+    #[serde(rename = "process_starts")]
+    ProcessStarts {
+        event_id: Option<String>,
         eta: Option<f64>,
         progress_data: Option<Vec<ProcessingProgressData>>,
     },
-    Unknown(serde_json::Value),
+    #[serde(rename = "log")]
+    Log {
+        event_id: Option<String>,
+    },
+    #[serde(rename = "progress")]
+    Progress {
+        event_id: Option<String>,
+        eta: Option<f64>,
+        progress_data: Option<Vec<ProcessingProgressData>>,
+    },
+    #[serde(rename = "heartbeat")]
+    Heartbeat,
+    #[serde(rename = "process_completed")]
+    ProcessCompleted {
+        event_id: Option<String>,
+        output: QueueDataMessageOutput,
+        success: bool,
+    },
+    #[serde(rename = "unexpected_error")]
+    UnexpectedError {
+        message: Option<String>,
+    },
     Open,
+    #[serde(untagged)]
+    Unknown(serde_json::Value),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
