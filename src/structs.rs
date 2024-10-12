@@ -33,6 +33,7 @@ pub struct AppConfig {
     pub theme_hash: Option<StringOrI64>,
     pub username: Option<String>,
     pub max_file_size: Option<i64>,
+    pub api_prefix: Option<String>,
     #[serde(default)]
     pub auth_required: Option<bool>,
     #[serde(default)]
