@@ -83,7 +83,7 @@ impl Client {
 
         let http_client = Client::build_http_client(&options.hf_token)?;
 
-        let (api_root, space_id) =
+        let (mut api_root, space_id) =
             Client::resolve_app_reference(&http_client, app_reference).await?;
 
         if let Some((username, password)) = &options.auth {
@@ -95,6 +95,10 @@ impl Client {
         }
 
         let config = Client::fetch_config(&http_client, &api_root).await?;
+        if let Some(ref api_prefix) = config.api_prefix {
+            api_root.push_str(api_prefix);
+        }
+
         let api_info = Client::fetch_api_info(&http_client, &api_root).await?;
 
         Ok(Self {
@@ -229,9 +233,9 @@ impl Client {
         let json = res.json::<serde_json::Value>().await?;
         let config: AppConfigVersionOnly = serde_json::from_value(json.clone())?;
 
-        if !config.version.starts_with("4.") {
+        if !config.version.starts_with("5.") && !config.version.starts_with("4.") {
             eprintln!(
-                "Warning: This client is supposed to work with Gradio 4. The current version of the app is {}, which may cause issues.",
+                "Warning: This client is supposed to work with Gradio 5 & 4. The current version of the app is {}, which may cause issues.",
                 config.version
             );
         }
