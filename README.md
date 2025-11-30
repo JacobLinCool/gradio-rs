@@ -14,7 +14,7 @@ Gradio Client in Rust.
 - [x] Command-line interface
 - [x] Synchronous and asynchronous API
 
-> Supposed to work with Gradio 5 & 4, other versions are not tested.
+> Supposed to work with Gradio 6, 5 & 4, other versions are not tested.
 
 ## Documentation
 
