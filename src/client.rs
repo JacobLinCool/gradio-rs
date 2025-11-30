@@ -233,9 +233,12 @@ impl Client {
         let json = res.json::<serde_json::Value>().await?;
         let config: AppConfigVersionOnly = serde_json::from_value(json.clone())?;
 
-        if !config.version.starts_with("5.") && !config.version.starts_with("4.") {
+        if !config.version.starts_with("6.")
+            && !config.version.starts_with("5.")
+            && !config.version.starts_with("4.")
+        {
             eprintln!(
-                "Warning: This client is supposed to work with Gradio 5 & 4. The current version of the app is {}, which may cause issues.",
+                "Warning: This client is supposed to work with Gradio 6, 5 & 4. The current version of the app is {}, which may cause issues.",
                 config.version
             );
         }
