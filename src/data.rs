@@ -1,4 +1,3 @@
-use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     future::Future,
@@ -7,7 +6,7 @@ use std::{
 };
 use tokio::io::AsyncWriteExt;
 
-use crate::{constants::UPLOAD_URL, structs::QueueDataMessageOutput};
+use crate::{constants::UPLOAD_URL, structs::QueueDataMessageOutput, Error, Result};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum PredictionInput {
@@ -31,18 +30,18 @@ pub async fn upload_file(
     api_root: &str,
     path: PathBuf,
 ) -> Result<serde_json::Value> {
+    let file_name = path
+        .file_name()
+        .ok_or(Error::InvalidFilePath)?
+        .to_string_lossy()
+        .to_string();
+    let mime_type = mime_guess::from_path(&path)
+        .first_or_octet_stream()
+        .essence_str()
+        .to_string();
     let part = reqwest::multipart::Part::bytes(tokio::fs::read(&path).await?)
-        .file_name(
-            path.file_name()
-                .ok_or_else(|| Error::msg("Invalid file path"))?
-                .to_string_lossy()
-                .to_string(),
-        )
-        .mime_str(
-            mime_guess::from_path(&path)
-                .first_or_octet_stream()
-                .as_ref(),
-        )?;
+        .file_name(file_name.clone())
+        .mime_str(&mime_type)?;
     let form = reqwest::multipart::Form::new().part("files", part);
     let res = http_client
         .post(&format!("{}/{}", api_root, UPLOAD_URL))
@@ -50,16 +49,19 @@ pub async fn upload_file(
         .send()
         .await?;
     if !res.status().is_success() {
-        return Err(Error::msg("Error uploading file"));
+        return Err(Error::FileUploadFailed);
     }
     let res = res.json::<Vec<String>>().await?;
     if res.len() != 1 {
-        return Err(Error::msg("Invalid file upload response"));
+        return Err(Error::InvalidFileUploadResponse);
     }
 
     let json = serde_json::json!({
         "path": res[0],
-        "orig_name": path.to_string_lossy(),
+        "url": serde_json::Value::Null,
+        "orig_name": file_name,
+        "mime_type": mime_type,
+        "is_stream": false,
         "meta": {
             "_type": "gradio.FileData"
         }
@@ -118,14 +120,14 @@ impl PredictionOutput {
     pub fn as_file(self) -> Result<GradioFileData> {
         match self {
             Self::File(file) => Ok(file),
-            _ => Err(anyhow::anyhow!("Expected file output")),
+            _ => Err(Error::ExpectedFileOutput),
         }
     }
 
     pub fn as_value(self) -> Result<serde_json::Value> {
         match self {
             Self::Value(value) => Ok(value),
-            _ => Err(anyhow::anyhow!("Expected value output")),
+            _ => Err(Error::ExpectedValueOutput),
         }
     }
 }
@@ -137,6 +139,9 @@ pub struct GradioFileData {
     pub meta: GradioFileDataMeta,
     pub url: Option<String>,
     pub size: Option<usize>,
+    pub mime_type: Option<String>,
+    #[serde(default)]
+    pub is_stream: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -145,7 +150,7 @@ pub struct GradioFileDataMeta {
 }
 
 impl TryFrom<QueueDataMessageOutput> for Vec<PredictionOutput> {
-    type Error = anyhow::Error;
+    type Error = Error;
 
     fn try_from(value: QueueDataMessageOutput) -> Result<Self> {
         match value {
@@ -156,9 +161,9 @@ impl TryFrom<QueueDataMessageOutput> for Vec<PredictionOutput> {
                 }
                 Ok(outputs)
             }
-            QueueDataMessageOutput::Error { error } => {
-                Err(anyhow::anyhow!(error.unwrap_or("Unknown error".to_string())))
-            }
+            QueueDataMessageOutput::Error { error, .. } => Err(Error::RemoteError {
+                message: error.unwrap_or_else(|| "Unknown error".to_string()),
+            }),
         }
     }
 }
@@ -175,7 +180,7 @@ impl GradioFileData {
             let content = response.bytes().await?;
             Ok(content)
         } else {
-            Err(Error::msg("No URL available for file"))
+            Err(Error::NoFileUrl)
         }
     }
 

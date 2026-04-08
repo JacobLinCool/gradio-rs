@@ -2,7 +2,7 @@ use crate::client::{Client, ClientOptions};
 use crate::data::{GradioFileData, PredictionInput, PredictionOutput};
 use crate::stream::PredictionStream;
 use crate::structs::QueueDataMessage;
-use anyhow::{Error, Result};
+use crate::Result;
 use std::path::Path;
 use tokio::runtime::Runtime;
 
@@ -54,11 +54,10 @@ impl GradioFileData {
 
 impl PredictionStream {
     pub fn next_sync(&mut self) -> Option<Result<QueueDataMessage>> {
-        let rt = Runtime::new();
-        if rt.is_err() {
-            return Some(Err(Error::msg("Runtime error")));
-        }
-        let rt = rt.unwrap();
+        let rt = match Runtime::new() {
+            Ok(rt) => rt,
+            Err(err) => return Some(Err(err.into())),
+        };
         let output = rt.block_on(self.next())?;
         Some(output)
     }

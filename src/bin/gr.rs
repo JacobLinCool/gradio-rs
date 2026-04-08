@@ -111,9 +111,9 @@ async fn run_command(
     }
 
     let http_client = client.http_client.clone();
-    let mut prediction = client.submit(&route, data).await.unwrap();
+    let mut prediction = client.submit(&route, data).await?;
     while let Some(event) = prediction.next().await {
-        let event = event.unwrap();
+        let event = event?;
         match event {
             gradio::structs::QueueDataMessage::Estimation {
                 rank, queue_size, ..
@@ -136,7 +136,7 @@ async fn run_command(
                 }
             }
             gradio::structs::QueueDataMessage::ProcessCompleted { output, .. } => {
-                let output: Vec<PredictionOutput> = output.try_into().unwrap();
+                let output: Vec<PredictionOutput> = output.try_into()?;
 
                 for (i, ret) in endpoint.returns.iter().enumerate() {
                     let value = output.get(i).expect("Missing return value");
@@ -163,6 +163,12 @@ async fn run_command(
                     }
                 }
                 break;
+            }
+            gradio::structs::QueueDataMessage::UnexpectedError { message, .. } => {
+                return Err(anyhow::anyhow!(
+                    "{}",
+                    message.unwrap_or_else(|| "Unexpected error".to_string())
+                ));
             }
             _ => {}
         }

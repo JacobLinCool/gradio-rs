@@ -1,5 +1,4 @@
-use crate::constants::*;
-use anyhow::{Error, Result};
+use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -44,7 +43,7 @@ pub async fn wake_up_space(client: &reqwest::Client, space_id: &str) -> Result<(
             .send()
             .await?;
         if !response.status().is_success() {
-            return Err(Error::msg(SPACE_STATUS_ERROR_MSG));
+            return Err(Error::SpaceStatusUnavailable);
         }
 
         let status = response.json::<SpaceStatus>().await?;
@@ -56,27 +55,25 @@ pub async fn wake_up_space(client: &reqwest::Client, space_id: &str) -> Result<(
                 // keep trying
             }
             SpaceStatusRuntimeStage::Paused => {
-                return Err(Error::msg(format!(
-                    "Space {} is paused by the author.",
-                    space_id
-                )));
+                return Err(Error::SpacePaused {
+                    space_id: space_id.to_string(),
+                });
             }
             SpaceStatusRuntimeStage::Running | SpaceStatusRuntimeStage::RunningBuilding => {
                 return Ok(());
             }
             SpaceStatusRuntimeStage::Unknown(s) => {
-                return Err(Error::msg(format!(
-                    "Unknown runtime stage {} for space {}",
-                    s, space_id
-                )));
+                return Err(Error::UnknownRuntimeStage {
+                    stage: s,
+                    space_id: space_id.to_string(),
+                });
             }
         }
 
         if retries >= max_retries {
-            return Err(Error::msg(format!(
-                "Space {} is taking too long to start.",
-                space_id
-            )));
+            return Err(Error::SpaceStartupTimeout {
+                space_id: space_id.to_string(),
+            });
         }
         retries += 1;
 
