@@ -126,6 +126,6 @@ Seed: 486085626
 For file input, simply use the file path as the argument:
 
 ```sh
-gr run hf-audio/whisper-large-v3 predict 'test-audio.wav' 'transcribe'
+gr run hf-audio/whisper-large-v3 transcribe 'test-audio.wav' 'transcribe'
 output: " Did you know you can try the coolest model on your command line?"
 ```

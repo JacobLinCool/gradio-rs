@@ -75,10 +75,18 @@ async fn run_command(
     let client = Client::new(space_id, opt).await?;
 
     let spec = client.view_api();
-    let endpoint = spec
-        .named_endpoints
-        .get(&route)
-        .unwrap_or_else(|| panic!("Route {} not found", route));
+    let endpoint = spec.named_endpoints.get(&route).unwrap_or_else(|| {
+        let available: Vec<&String> = spec.named_endpoints.keys().collect();
+        panic!(
+            "Route {} not found. Available routes: {}",
+            route,
+            available
+                .iter()
+                .map(|r| r.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    });
     let parameters = &endpoint.parameters;
 
     let mut data = vec![];
