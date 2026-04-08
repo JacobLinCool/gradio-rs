@@ -225,7 +225,7 @@ impl Client {
         password: &str,
     ) -> Result<()> {
         let res = http_client
-            .post(&format!("{}/{}", api_root, LOGIN_URL))
+            .post(format!("{}/{}", api_root, LOGIN_URL))
             .form(&[("username", username), ("password", password)])
             .send()
             .await?;
@@ -237,7 +237,7 @@ impl Client {
 
     async fn fetch_config(http_client: &reqwest::Client, api_root: &str) -> Result<AppConfig> {
         let res = http_client
-            .get(&format!("{}/{}", api_root, CONFIG_URL))
+            .get(format!("{}/{}", api_root, CONFIG_URL))
             .send()
             .await?;
         if !res.status().is_success() {
@@ -259,7 +259,7 @@ impl Client {
 
     async fn fetch_api_info(http_client: &reqwest::Client, api_root: &str) -> Result<ApiInfo> {
         let res = http_client
-            .get(&format!("{}/{}", api_root, API_INFO_URL))
+            .get(format!("{}/{}", api_root, API_INFO_URL))
             .send()
             .await?;
         if !res.status().is_success() {

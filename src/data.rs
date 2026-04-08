@@ -44,7 +44,7 @@ pub async fn upload_file(
         .mime_str(&mime_type)?;
     let form = reqwest::multipart::Form::new().part("files", part);
     let res = http_client
-        .post(&format!("{}/{}", api_root, UPLOAD_URL))
+        .post(format!("{}/{}", api_root, UPLOAD_URL))
         .multipart(form)
         .send()
         .await?;
@@ -209,7 +209,7 @@ impl GradioFileData {
         } else {
             "file.bin"
         };
-        let ext = ext.split('.').last();
+        let ext = ext.split('.').next_back();
         ext.unwrap_or("bin")
     }
 }

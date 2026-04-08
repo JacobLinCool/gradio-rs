@@ -39,7 +39,7 @@ pub async fn wake_up_space(client: &reqwest::Client, space_id: &str) -> Result<(
 
     loop {
         let response = client
-            .get(&format!("https://huggingface.co/api/spaces/{}", space_id))
+            .get(format!("https://huggingface.co/api/spaces/{}", space_id))
             .send()
             .await?;
         if !response.status().is_success() {
