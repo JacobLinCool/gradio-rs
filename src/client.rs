@@ -1,4 +1,3 @@
-use anyhow::{Error, Result};
 use rand::{distributions::Alphanumeric, Rng};
 use regex::Regex;
 
@@ -9,6 +8,7 @@ use crate::{
     data::{PredictionInput, PredictionOutput},
     space::wake_up_space,
     stream::PredictionStream,
+    Error, Result,
 };
 
 #[derive(Default)]
@@ -63,15 +63,16 @@ impl Client {
     /// # Example
     ///
     /// ```
-    /// use gradio::{Client, ClientOptions};
+    /// use gradio::{Client, ClientOptions, Result};
     ///
     /// #[tokio::main]
-    /// async fn main() {
+    /// async fn main() -> Result<()> {
     ///    let client = Client::new(
     ///         "gradio/hello_world",
     ///         ClientOptions::default()
-    ///     ).await.unwrap();
+    ///     ).await?;
     ///     println!("{:?}", client);
+    ///     Ok(())
     /// }
     /// ```
     pub async fn new(app_reference: &str, options: ClientOptions) -> Result<Self> {
@@ -96,7 +97,7 @@ impl Client {
 
         let config = Client::fetch_config(&http_client, &api_root).await?;
         if let Some(ref api_prefix) = config.api_prefix {
-            api_root.push_str(api_prefix);
+            api_root = Client::join_url_path(&api_root, api_prefix);
         }
 
         let api_info = Client::fetch_api_info(&http_client, &api_root).await?;
@@ -127,7 +128,14 @@ impl Client {
     ) -> Result<PredictionStream> {
         let data = preprocess_data(&self.http_client, &self.api_root, data).await?;
         let fn_index = Client::resolve_fn_index(&self.config, route)?;
-        PredictionStream::new(&self.http_client, &self.api_root, fn_index, data).await
+        PredictionStream::new(
+            &self.http_client,
+            &self.api_root,
+            &self.config.protocol,
+            fn_index,
+            data,
+        )
+        .await
     }
 
     pub async fn predict(
@@ -142,16 +150,19 @@ impl Client {
                     QueueDataMessage::Open
                     | QueueDataMessage::Estimation { .. }
                     | QueueDataMessage::ProcessStarts { .. }
+                    | QueueDataMessage::ProcessGenerating { .. }
+                    | QueueDataMessage::ProcessStreaming { .. }
                     | QueueDataMessage::Progress { .. }
                     | QueueDataMessage::Log { .. }
-                    | QueueDataMessage::Heartbeat => {}
+                    | QueueDataMessage::Heartbeat
+                    | QueueDataMessage::CloseStream => {}
                     QueueDataMessage::ProcessCompleted { output, .. } => {
                         return output.try_into();
                     }
-                    QueueDataMessage::UnexpectedError { message } => {
-                        return Err(Error::msg(
-                            message.unwrap_or_else(|| "Unexpected error".to_string()),
-                        ));
+                    QueueDataMessage::UnexpectedError { message, .. } => {
+                        return Err(Error::UnexpectedRemoteError {
+                            message: message.unwrap_or_else(|| "Unexpected error".to_string()),
+                        });
                     }
                     QueueDataMessage::Unknown(m) => {
                         eprintln!("[warning] Skipping unknown message: {:?}", m);
@@ -163,7 +174,7 @@ impl Client {
             }
         }
 
-        Err(Error::msg("Stream ended unexpectedly"))
+        Err(Error::StreamEndedUnexpectedly)
     }
 
     fn build_http_client(hf_token: &Option<String>) -> Result<reqwest::Client> {
@@ -178,7 +189,7 @@ impl Client {
                 )]));
         }
 
-        http_client_builder.build().map_err(Error::new)
+        http_client_builder.build().map_err(Error::from)
     }
 
     async fn resolve_app_reference(
@@ -186,8 +197,6 @@ impl Client {
         app_reference: &str,
     ) -> Result<(String, Option<String>)> {
         let app_reference = app_reference.trim_end_matches('/').to_string();
-        let mut api_root = app_reference.clone();
-        let mut space_id = None;
         if Regex::new("^[a-zA-Z0-9_\\-\\.]+\\/[a-zA-Z0-9_\\-\\.]+$")?.is_match(&app_reference) {
             let url = format!(
                 "https://huggingface.co/api/spaces/{}/{}",
@@ -195,13 +204,18 @@ impl Client {
             );
             let res = http_client.get(&url).send().await?;
             let res = res.json::<HuggingFaceAPIHost>().await?;
-            api_root.clone_from(&res.host);
-            space_id = Some(app_reference);
-        } else if Regex::new(".*hf\\.space\\/{0,1}$")?.is_match(&app_reference) {
-            space_id = Some(app_reference.replace(".hf.space", ""));
+            return Ok((res.host, Some(app_reference)));
         }
 
-        Ok((api_root, space_id))
+        if reqwest::Url::parse(&app_reference).is_ok() {
+            return Ok((app_reference, None));
+        }
+
+        if Regex::new("^[^/]+\\.hf\\.space(?:/.*)?$")?.is_match(&app_reference) {
+            return Ok((format!("https://{}", app_reference), None));
+        }
+
+        Ok((app_reference, None))
     }
 
     async fn authenticate(
@@ -216,7 +230,7 @@ impl Client {
             .send()
             .await?;
         if !res.status().is_success() {
-            return Err(Error::msg("Login failed"));
+            return Err(Error::LoginFailed);
         }
         Ok(())
     }
@@ -227,23 +241,20 @@ impl Client {
             .send()
             .await?;
         if !res.status().is_success() {
-            return Err(Error::msg("Could not resolve app config"));
+            return Err(Error::AppConfigUnavailable);
         }
 
         let json = res.json::<serde_json::Value>().await?;
         let config: AppConfigVersionOnly = serde_json::from_value(json.clone())?;
 
-        if !config.version.starts_with("6.")
-            && !config.version.starts_with("5.")
-            && !config.version.starts_with("4.")
-        {
+        if !Client::supports_version(&config.version) {
             eprintln!(
-                "Warning: This client is supposed to work with Gradio 6, 5 & 4. The current version of the app is {}, which may cause issues.",
+                "Warning: This client is supposed to work with Gradio 4, 5, and 6. The current version of the app is {}, which may cause issues.",
                 config.version
             );
         }
 
-        serde_json::from_value(json).map_err(Error::new)
+        serde_json::from_value(json).map_err(Error::from)
     }
 
     async fn fetch_api_info(http_client: &reqwest::Client, api_root: &str) -> Result<ApiInfo> {
@@ -252,9 +263,9 @@ impl Client {
             .send()
             .await?;
         if !res.status().is_success() {
-            return Err(Error::msg("Could not get API info"));
+            return Err(Error::ApiInfoUnavailable);
         }
-        res.json::<ApiInfo>().await.map_err(Error::new)
+        res.json::<ApiInfo>().await.map_err(Error::from)
     }
 
     fn resolve_fn_index(config: &AppConfig, route: &str) -> Result<i64> {
@@ -264,12 +275,59 @@ impl Client {
             .iter()
             .enumerate()
             .find(|(_i, d)| d.api_name == route)
-            .ok_or_else(|| Error::msg("Invalid route"))?;
+            .ok_or_else(|| Error::InvalidRoute {
+                route: route.to_string(),
+            })?;
 
         if found.1.id == -1 {
             Ok(found.0 as i64)
         } else {
             Ok(found.1.id)
         }
+    }
+
+    fn join_url_path(base: &str, suffix: &str) -> String {
+        let base = base.trim_end_matches('/');
+        let suffix = suffix.trim_matches('/');
+
+        if suffix.is_empty() {
+            base.to_string()
+        } else {
+            format!("{}/{}", base, suffix)
+        }
+    }
+
+    fn supports_version(version: &str) -> bool {
+        version
+            .split('.')
+            .next()
+            .and_then(|major| major.parse::<u64>().ok())
+            .is_some_and(|major| (4..=6).contains(&major))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Client;
+
+    #[test]
+    fn join_url_path_normalizes_slashes() {
+        assert_eq!(
+            Client::join_url_path("https://example.com/", "/gradio_api/"),
+            "https://example.com/gradio_api"
+        );
+        assert_eq!(
+            Client::join_url_path("https://example.com", "gradio_api"),
+            "https://example.com/gradio_api"
+        );
+    }
+
+    #[test]
+    fn supports_gradio_4_5_and_6() {
+        assert!(Client::supports_version("4.31.2"));
+        assert!(Client::supports_version("5.0.0"));
+        assert!(Client::supports_version("6.11.0"));
+        assert!(!Client::supports_version("7.0.0"));
+        assert!(!Client::supports_version("invalid"));
     }
 }

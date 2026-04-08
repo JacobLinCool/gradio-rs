@@ -14,7 +14,7 @@ Gradio Client in Rust.
 - [x] Command-line interface
 - [x] Synchronous and asynchronous API
 
-> Supposed to work with Gradio 6, 5 & 4, other versions are not tested.
+> Supposed to work with Gradio 4, 5, and 6, other versions are not tested.
 
 ## Documentation
 
@@ -28,10 +28,10 @@ See the [examples](./examples/) directory for more examples.
 Here is an example of using `BS-RoFormer` model to separate vocals and background music from an audio file.
 
 ```rust
-use gradio::{PredictionInput, Client, ClientOptions};
+use gradio::{PredictionInput, Client, ClientOptions, Result};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     if std::env::args().len() < 2 {
         println!("Please provide an audio file path as an argument");
         std::process::exit(1);
@@ -41,8 +41,7 @@ async fn main() {
     println!("File: {}", file_path);
 
     let client = Client::new("JacobLinCool/vocal-separation", ClientOptions::default())
-        .await
-        .unwrap();
+        .await?;
 
     let output = client
         .predict(
@@ -52,8 +51,7 @@ async fn main() {
                 PredictionInput::from_value("BS-RoFormer"),
             ],
         )
-        .await
-        .unwrap();
+        .await?;
     println!(
         "Vocals: {}",
         output[0].clone().as_file().unwrap().url.unwrap()
@@ -62,10 +60,37 @@ async fn main() {
         "Background: {}",
         output[1].clone().as_file().unwrap().url.unwrap()
     );
+
+    Ok(())
 }
 ```
 
 See [./examples/sd3.rs](./examples/sd3.rs) for non-blocking example with `submit` method.
+
+## Errors
+
+The library now exposes `gradio::Error` and `gradio::Result<T>` as its primary error model.
+
+```rust
+use gradio::{Client, ClientOptions, Error, PredictionInput, Result};
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let client = Client::new("gradio/hello_world", ClientOptions::default()).await?;
+
+    match client.predict("/missing", vec![PredictionInput::from_value("Rust")]).await {
+        Ok(output) => {
+            println!("{:?}", output);
+            Ok(())
+        }
+        Err(Error::InvalidRoute { route }) => {
+            eprintln!("Invalid route: {}", route);
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
+}
+```
 
 ## Command-line Interface
 

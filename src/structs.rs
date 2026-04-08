@@ -136,12 +136,28 @@ pub enum QueueDataMessage {
         event_id: Option<String>,
         rank: i64,
         queue_size: i64,
-        rank_eta: f64,
+        rank_eta: Option<f64>,
     },
     #[serde(rename = "process_starts")]
     ProcessStarts {
         event_id: Option<String>,
         eta: Option<f64>,
+        progress_data: Option<Vec<ProcessingProgressData>>,
+    },
+    #[serde(rename = "process_generating")]
+    ProcessGenerating {
+        event_id: Option<String>,
+        output: QueueDataMessageOutput,
+        success: bool,
+        time_limit: Option<f64>,
+        progress_data: Option<Vec<ProcessingProgressData>>,
+    },
+    #[serde(rename = "process_streaming")]
+    ProcessStreaming {
+        event_id: Option<String>,
+        output: QueueDataMessageOutput,
+        success: bool,
+        time_limit: Option<f64>,
         progress_data: Option<Vec<ProcessingProgressData>>,
     },
     #[serde(rename = "log")]
@@ -161,12 +177,17 @@ pub enum QueueDataMessage {
         event_id: Option<String>,
         output: QueueDataMessageOutput,
         success: bool,
+        progress_data: Option<Vec<ProcessingProgressData>>,
     },
     #[serde(rename = "unexpected_error")]
     UnexpectedError {
         message: Option<String>,
+        session_not_found: Option<bool>,
+        success: Option<bool>,
     },
     Open,
+    #[serde(rename = "close_stream")]
+    CloseStream,
     #[serde(untagged)]
     Unknown(serde_json::Value),
 }
@@ -176,10 +197,15 @@ pub enum QueueDataMessage {
 pub enum QueueDataMessageOutput {
     Success {
         data: Vec<serde_json::Value>,
-        duration: f64,
+        duration: Option<f64>,
+        render_config: Option<serde_json::Value>,
+        changed_state_ids: Option<Vec<serde_json::Value>>,
     },
     Error {
         error: Option<String>,
+        title: Option<String>,
+        duration: Option<f64>,
+        visible: Option<bool>,
     },
 }
 
@@ -188,4 +214,15 @@ pub struct ProcessingProgressData {
     pub index: usize,
     pub length: Option<usize>,
     pub unit: String,
+    pub progress: Option<f64>,
+    pub desc: Option<String>,
+}
+
+impl QueueDataMessageOutput {
+    pub fn data_mut(&mut self) -> Option<&mut Vec<serde_json::Value>> {
+        match self {
+            Self::Success { data, .. } => Some(data),
+            Self::Error { .. } => None,
+        }
+    }
 }
