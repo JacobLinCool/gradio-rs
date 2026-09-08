@@ -100,6 +100,8 @@ pub struct EndpointInfo {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiData {
+    /// Display label, or the translation key for a Gradio i18n label.
+    #[serde(default, deserialize_with = "deserialize_label")]
     pub label: Option<String>,
     pub parameter_name: Option<String>,
     pub parameter_default: Option<serde_json::Value>,
@@ -225,4 +227,30 @@ impl QueueDataMessageOutput {
             Self::Error { .. } => None,
         }
     }
+}
+
+fn deserialize_label<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Label {
+        Text(String),
+        Translation(TranslationLabel),
+    }
+
+    #[derive(Deserialize)]
+    #[serde(tag = "_type")]
+    enum TranslationLabel {
+        #[serde(rename = "translation_metadata")]
+        Metadata { key: String },
+    }
+
+    Ok(
+        Option::<Label>::deserialize(deserializer)?.map(|label| match label {
+            Label::Text(text) => text,
+            Label::Translation(TranslationLabel::Metadata { key }) => key,
+        }),
+    )
 }

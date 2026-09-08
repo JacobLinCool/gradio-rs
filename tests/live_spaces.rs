@@ -7,6 +7,39 @@ const SAMPLE_AUDIO_PATH: &str = "/tmp/gradio-rs-live-audio-sample.wav";
 const SAMPLE_MODEL_URL: &str =
     "https://raw.githubusercontent.com/gradio-app/gradio/main/gradio/media_assets/models3d/Fox.gltf";
 const SAMPLE_MODEL_PATH: &str = "/tmp/gradio-rs-live-model-sample.gltf";
+const I18N_APPS: [&str; 2] = [
+    "https://voxcpm.modelbest.cn",
+    "https://openbmb-voxcpm-demo.hf.space",
+];
+
+fn assert_i18n_label(client: &Client) {
+    assert!(client.view_api().named_endpoints.values().any(|endpoint| {
+        endpoint
+            .parameters
+            .iter()
+            .any(|parameter| parameter.label.as_deref() == Some("show_prompt_text_label"))
+    }));
+}
+
+#[tokio::test]
+#[ignore = "requires live Gradio apps"]
+async fn gradio_6_i18n_metadata_is_available() -> Result<()> {
+    for app in I18N_APPS {
+        let client = Client::new(app, ClientOptions::default()).await?;
+        assert_i18n_label(&client);
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires live Gradio apps"]
+fn gradio_6_i18n_metadata_is_available_sync() -> Result<()> {
+    for app in I18N_APPS {
+        let client = Client::new_sync(app, ClientOptions::default())?;
+        assert_i18n_label(&client);
+    }
+    Ok(())
+}
 
 async fn ensure_sample_audio() -> Result<&'static str> {
     if tokio::fs::try_exists(SAMPLE_AUDIO_PATH).await? {
