@@ -100,8 +100,7 @@ pub struct EndpointInfo {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiData {
-    /// Gradio 5.x: plain string; 6.x: i18n map { key, _type } — accept both
-    /// (6.x wraps labels in translation metadata, see issue #10)
+    /// Display label, or the translation key for a Gradio i18n label.
     #[serde(default, deserialize_with = "deserialize_label")]
     pub label: Option<String>,
     pub parameter_name: Option<String>,
@@ -230,20 +229,28 @@ impl QueueDataMessageOutput {
     }
 }
 
-/// Gradio 6.x wraps parameter labels in an i18n map
-/// ({ "key": ..., "_type": "translation_metadata" }), while 5.x uses a plain
-/// string — accept both shapes and normalize to the inner key.
 fn deserialize_label<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let v: Option<serde_json::Value> = serde::Deserialize::deserialize(deserializer)?;
-    Ok(match v {
-        None => None,
-        Some(serde_json::Value::String(s)) => Some(s),
-        Some(serde_json::Value::Object(m)) => {
-            m.get("key").and_then(|k| k.as_str()).map(String::from)
-        }
-        Some(other) => Some(other.to_string()),
-    })
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Label {
+        Text(String),
+        Translation(TranslationLabel),
+    }
+
+    #[derive(Deserialize)]
+    #[serde(tag = "_type")]
+    enum TranslationLabel {
+        #[serde(rename = "translation_metadata")]
+        Metadata { key: String },
+    }
+
+    Ok(
+        Option::<Label>::deserialize(deserializer)?.map(|label| match label {
+            Label::Text(text) => text,
+            Label::Translation(TranslationLabel::Metadata { key }) => key,
+        }),
+    )
 }
