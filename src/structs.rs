@@ -100,6 +100,9 @@ pub struct EndpointInfo {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApiData {
+    /// Gradio 5.x: plain string; 6.x: i18n map { key, _type } — accept both
+    /// (6.x wraps labels in translation metadata, see issue #10)
+    #[serde(default, deserialize_with = "deserialize_label")]
     pub label: Option<String>,
     pub parameter_name: Option<String>,
     pub parameter_default: Option<serde_json::Value>,
@@ -225,4 +228,22 @@ impl QueueDataMessageOutput {
             Self::Error { .. } => None,
         }
     }
+}
+
+/// Gradio 6.x wraps parameter labels in an i18n map
+/// ({ "key": ..., "_type": "translation_metadata" }), while 5.x uses a plain
+/// string — accept both shapes and normalize to the inner key.
+fn deserialize_label<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v: Option<serde_json::Value> = serde::Deserialize::deserialize(deserializer)?;
+    Ok(match v {
+        None => None,
+        Some(serde_json::Value::String(s)) => Some(s),
+        Some(serde_json::Value::Object(m)) => {
+            m.get("key").and_then(|k| k.as_str()).map(String::from)
+        }
+        Some(other) => Some(other.to_string()),
+    })
 }
